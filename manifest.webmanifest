@@ -1,0 +1,16 @@
+{
+  "name": "필기노트",
+  "short_name": "필기노트",
+  "description": "손글씨 메모를 Claude가 읽고 일정·할 일·문서로 처리해 주는 필기 앱",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fffdf8",
+  "theme_color": "#1e3a5f",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

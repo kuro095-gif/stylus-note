@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1e3a5f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>필기노트</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ① 메모 화면 -->
+  <section id="memoView" class="view">
+    <header class="topbar">
+      <button class="icon-btn" id="btnList" aria-label="메모 목록">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <input id="title" class="title-input" placeholder="제목 없음" autocomplete="off" enterkeyhint="done">
+      <span id="syncDot" class="sync-dot" title="저장됨"></span>
+      <button class="icon-btn" id="btnMore" aria-label="메뉴">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+      </button>
+    </header>
+
+    <nav class="toolbar" id="toolbar">
+      <button class="tool" data-tool="pen" aria-label="펜">
+        <svg viewBox="0 0 24 24"><path d="M4 20l1.2-4.6L15.6 5a2 2 0 012.8 0l.6.6a2 2 0 010 2.8L8.6 18.8z"/><path d="M13.5 7l3.5 3.5"/></svg>
+      </button>
+      <button class="tool" data-tool="hl" aria-label="형광펜">
+        <svg viewBox="0 0 24 24"><path d="M9 14l-3 3v3h6l1-1"/><path d="M8 13l7-9 5 5-9 7z"/></svg>
+      </button>
+      <button class="tool" data-tool="eraser" aria-label="지우개">
+        <svg viewBox="0 0 24 24"><path d="M7 20h12"/><path d="M5 15l8.5-8.5a2 2 0 012.8 0l2.2 2.2a2 2 0 010 2.8L12 18H8z"/></svg>
+      </button>
+      <span class="sep"></span>
+      <button class="tool swatch-btn" id="btnColor" aria-label="색상"><span id="swatch"></span></button>
+      <button class="tool" id="btnWidth" aria-label="굵기"><span id="widthDot" class="width-dot"></span></button>
+      <span class="sep"></span>
+      <button class="tool" id="btnUndo" aria-label="실행 취소">
+        <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg>
+      </button>
+      <button class="tool" id="btnRedo" aria-label="다시 실행">
+        <svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h3"/></svg>
+      </button>
+      <span class="sep"></span>
+      <button class="tool" id="btnText" aria-label="텍스트">
+        <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg>
+      </button>
+      <button class="tool" id="btnCheck" aria-label="체크박스">
+        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 5-6"/></svg>
+      </button>
+      <button class="tool" id="btnPhoto" aria-label="사진">
+        <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      </button>
+      <button class="tool" id="btnBg" aria-label="배경">
+        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9.3h16M4 14.6h16M9.3 4v16M14.6 4v16"/></svg>
+      </button>
+    </nav>
+
+    <div id="palette" class="palette hidden"></div>
+
+    <div id="scroller">
+      <div id="page" class="bg-lines">
+        <div id="track"><canvas id="ink"></canvas></div>
+      </div>
+      <div id="results"></div>
+    </div>
+
+    <footer class="actions">
+      <button id="btnSend" class="act act-send">
+        <svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></svg>보내기
+      </button>
+      <button id="btnRequest" class="act act-req">
+        <svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>요청
+      </button>
+    </footer>
+  </section>
+
+  <!-- ② 메모 목록 -->
+  <section id="listView" class="view hidden">
+    <header class="topbar">
+      <button class="icon-btn" id="btnListBack" aria-label="메모로 돌아가기">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <h1 class="brand">필기노트</h1>
+      <button class="icon-btn" id="btnSettings" aria-label="설정">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>
+      </button>
+    </header>
+    <div class="list-body">
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
+        <input id="search" type="search" placeholder="손글씨 내용까지 검색" autocomplete="off">
+      </div>
+      <div class="chips" id="nbChips"></div>
+      <div class="chips sub" id="secChips"></div>
+      <div id="memoList" class="memo-list"></div>
+    </div>
+    <footer class="actions">
+      <button id="btnHistory" class="act act-ghost">
+        <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>처리 내역
+      </button>
+      <button id="btnNewMemo" class="act act-send">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>새 메모
+      </button>
+    </footer>
+  </section>
+
+  <!-- ③ 처리 내역 -->
+  <section id="historyView" class="view hidden">
+    <header class="topbar">
+      <button class="icon-btn" id="btnHistoryBack" aria-label="뒤로">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <h1 class="brand">처리 내역</h1>
+      <span class="icon-btn"></span>
+    </header>
+    <div class="tabs" id="historyTabs">
+      <button data-f="all" class="on">전체</button>
+      <button data-f="event">일정</button>
+      <button data-f="task">할 일</button>
+      <button data-f="doc">문서</button>
+      <button data-f="answer">답변</button>
+    </div>
+    <div id="historyList" class="history-list"></div>
+  </section>
+
+  <!-- ④ 설정 -->
+  <section id="settingsView" class="view hidden">
+    <header class="topbar">
+      <button class="icon-btn" id="btnSettingsBack" aria-label="뒤로">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <h1 class="brand">설정</h1>
+      <span class="icon-btn"></span>
+    </header>
+    <div class="settings-body">
+      <section class="card">
+        <h2>서버 연결</h2>
+        <label>서버 주소 (Apps Script 웹앱 URL)
+          <input id="setUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+        </label>
+        <label>비밀번호
+          <input id="setPw" type="password" placeholder="Apps Script에 넣은 APP_PASSWORD" autocomplete="off">
+        </label>
+        <div class="row-btns">
+          <button id="btnSaveConn" class="btn primary">저장하고 연결 확인</button>
+        </div>
+        <p id="connStatus" class="hint"></p>
+      </section>
+
+      <section class="card">
+        <h2>필기 입력 방식</h2>
+        <div class="radio-list" id="inputModes">
+          <label><input type="radio" name="inputMode" value="auto"> <b>자동</b><span>펜이 감지되면 펜으로만 필기, 아니면 한 손가락 필기</span></label>
+          <label><input type="radio" name="inputMode" value="pen"> <b>전자펜 전용</b><span>펜으로만 필기, 손가락은 스크롤 (손바닥 인식 방지)</span></label>
+          <label><input type="radio" name="inputMode" value="touch"> <b>손가락·일반 터치펜</b><span>한 손가락으로 필기, 두 손가락으로 스크롤</span></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>전송 대기</h2>
+        <p id="queueInfo" class="hint">-</p>
+        <div class="row-btns">
+          <button id="btnFlush" class="btn">지금 보내기</button>
+          <button id="btnSyncAll" class="btn">모든 메모 드라이브 저장</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>정보</h2>
+        <p class="hint" id="aboutInfo"></p>
+      </section>
+    </div>
+  </section>
+
+  <!-- 사진 편집 (전체 화면) -->
+  <div id="photoEditor" class="photo-editor hidden">
+    <header class="pe-top">
+      <button class="icon-btn light" id="peClose" aria-label="닫기">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <span class="pe-title">사진에 그리기</span>
+      <button class="pe-share" id="peShare">
+        <svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg>공유
+      </button>
+      <button class="pe-done" id="peDone">완료</button>
+    </header>
+    <div class="pe-stage" id="peStage"><canvas id="peCanvas"></canvas></div>
+    <nav class="pe-tools" id="peTools">
+      <button class="tool" data-petool="pen" aria-label="펜"><svg viewBox="0 0 24 24"><path d="M4 20l1.2-4.6L15.6 5a2 2 0 012.8 0l.6.6a2 2 0 010 2.8L8.6 18.8z"/></svg></button>
+      <button class="tool" data-petool="hl" aria-label="형광펜"><svg viewBox="0 0 24 24"><path d="M9 14l-3 3v3h6l1-1"/><path d="M8 13l7-9 5 5-9 7z"/></svg></button>
+      <button class="tool" data-petool="eraser" aria-label="지우개"><svg viewBox="0 0 24 24"><path d="M7 20h12"/><path d="M5 15l8.5-8.5a2 2 0 012.8 0l2.2 2.2a2 2 0 010 2.8L12 18H8z"/></svg></button>
+      <span class="sep"></span>
+      <span id="peColors" class="pe-colors"></span>
+      <span class="sep"></span>
+      <button class="tool" id="peUndo" aria-label="실행 취소"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg></button>
+    </nav>
+  </div>
+
+  <div id="sheetBackdrop" class="sheet-backdrop hidden"></div>
+  <div id="sheet" class="sheet hidden"></div>
+  <div id="toast" class="toast"></div>
+
+  <input type="file" id="fileCamera" accept="image/*" capture="environment" hidden>
+  <input type="file" id="fileAlbum" accept="image/*" hidden>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
