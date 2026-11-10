@@ -1,7 +1,7 @@
 /* 필기노트 — 휴대폰 필기 + Claude 처리 웹앱 */
 'use strict';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 const PAGE_W = 800;          // 논리 좌표 폭
 const LINE = 56;             // 줄 간격
 const MARGIN = 40;           // 좌우 여백
@@ -833,12 +833,9 @@ function renderToolbar() {
   $$('#toolbar [data-tool]').forEach(b => b.classList.toggle('on', mode === 'draw' && b.dataset.tool === tool.t));
   const hl = tool.t === 'hl';
   $('#swatch').style.background = tool.t === 'eraser' ? '#e5e7eb' : (hl ? tool.hlColor : tool.penColor);
-  const w = hl ? [10, 14, 18][tool.hlW] : [5, 8, 12][tool.penW];
-  const dot = $('#widthDot');
-  dot.style.width = (hl ? w * 1.6 : w) + 'px'; dot.style.height = w + 'px';
-  dot.style.background = tool.t === 'eraser' ? '#cbd5e1' : (hl ? tool.hlColor : tool.penColor);
+  const sw = (hl ? [12, 16, 20][tool.hlW] : [10, 15, 20][tool.penW]);
+  $('#swatch').style.width = sw + 'px'; $('#swatch').style.height = sw + 'px';
   $('#btnColor').disabled = tool.t === 'eraser';
-  $('#btnWidth').disabled = tool.t === 'eraser';
   updateUndoBtns();
 }
 function openPalette() {
@@ -846,7 +843,12 @@ function openPalette() {
   if (!p.classList.contains('hidden')) return closePalette();
   const hl = tool.t === 'hl';
   const colors = hl ? HL_COLORS : PEN_COLORS, curC = hl ? tool.hlColor : tool.penColor;
-  p.innerHTML = colors.map(c => `<button data-c="${c}" style="background:${c}" class="${c === curC ? 'on' : ''}"></button>`).join('');
+  const curW = hl ? tool.hlW : tool.penW;
+  const dots = hl ? [[16, 8], [24, 12], [34, 16]] : [[6, 6], [10, 10], [15, 15]];
+  p.innerHTML = `<div class="pal-label">색상</div><div class="pal-row">` +
+    colors.map(c => `<button data-c="${c}" style="background:${c}" class="${c === curC ? 'on' : ''}"></button>`).join('') +
+    `</div><div class="pal-label">굵기</div><div class="pal-row">` +
+    dots.map(([w, h], i) => `<button class="wbtn ${i === curW ? 'on' : ''}" data-w="${i}"><span style="width:${w}px;height:${h}px;background:${curC}"></span></button>`).join('') + `</div>`;
   const r = $('#toolbar').getBoundingClientRect();
   p.style.top = (r.bottom + 6) + 'px';
   p.classList.remove('hidden');
@@ -861,31 +863,25 @@ $('#toolbar').addEventListener('click', (e) => {
   }
   switch (b.id) {
     case 'btnColor': if (mode !== 'draw') setMode('draw'); openPalette(); break;
-    case 'btnWidth':
-      if (tool.t === 'hl') tool.hlW = (tool.hlW + 1) % 3; else tool.penW = (tool.penW + 1) % 3;
-      saveTool(); renderToolbar(); break;
     case 'btnUndo': undo(); break;
     case 'btnRedo': redo(); break;
     case 'btnText': if (mode === 'text') setMode('draw'); else addTextBlock(); break;
     case 'btnCheck': addCheckBlock(); break;
     case 'btnPhoto': pickPhoto(); break;
-    case 'btnBg': {
-      const order = ['lines', 'grid', 'none'];
-      memo.bg = order[(order.indexOf(memo.bg || 'lines') + 1) % 3];
-      settings.bg = memo.bg; saveSettings();
-      setBg(memo.bg); markDirty();
-      toast({ lines: '줄 노트', grid: '모눈', none: '무지' }[memo.bg]);
-      break;
-    }
   }
 });
 // 도구 버튼이 포커스를 가져가지 않게 (입력 중인 글자가 버튼으로 가는 것 방지)
 ['#toolbar', '#palette', '.actions'].forEach(sel => $$(sel).forEach(n => n.addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); })));
 $('#palette').addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-c]'); if (!b) return;
-  if (tool.t === 'hl') tool.hlColor = b.dataset.c; else tool.penColor = b.dataset.c;
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.c) { if (tool.t === 'hl') tool.hlColor = b.dataset.c; else tool.penColor = b.dataset.c; }
+  if (b.dataset.w != null) { if (tool.t === 'hl') tool.hlW = +b.dataset.w; else tool.penW = +b.dataset.w; }
   saveTool(); renderToolbar(); closePalette();
 });
+function setMemoBg(bg) {
+  memo.bg = bg; settings.bg = bg; saveSettings();
+  setBg(bg); markDirty();
+}
 $('#peTools').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.petool) { tool.peTool = b.dataset.petool; saveTool(); renderPeTools(); return; }
@@ -975,11 +971,16 @@ $('#btnMore').addEventListener('click', () => {
   openSheet(`<h3>${esc(memo.title || '제목 없음')}</h3>
     <button class="opt" data-k="new"><span class="em">📝</span><span>새 메모</span></button>
     <button class="opt" data-k="tpl"><span class="em">📋</span><span>양식 넣기<small>학부모 상담 · 회의 · 업무 협조</small></span></button>
+    <button class="opt" data-k="bg"><span class="em">▦</span><span>배경 바꾸기<small>지금: ${{ lines: '줄 노트', grid: '모눈', none: '무지' }[memo.bg || 'lines']}</small></span></button>
     <button class="opt" data-k="move"><span class="em">📂</span><span>위치 옮기기<small>${esc(memo.notebook)} › ${esc(memo.section)}</small></span></button>
     ${drive}
     <button class="opt danger" data-k="del"><span class="em">🗑️</span><span>메모 삭제</span></button>`, async (k) => {
     if (k === 'new') { await leaveMemo(); chooseTemplateAndCreate(memo.notebook, memo.section); }
     if (k === 'tpl') chooseTemplate(insertTemplate);
+    if (k === 'bg') openSheet(`<h3>배경</h3>
+      <button class="opt" data-k="lines"><span class="em">☰</span><span>줄 노트</span></button>
+      <button class="opt" data-k="grid"><span class="em">▦</span><span>모눈</span></button>
+      <button class="opt" data-k="none"><span class="em">▢</span><span>무지</span></button>`, setMemoBg);
     if (k === 'move') chooseLocation((nb, sec) => { memo.notebook = nb; memo.section = sec; markDirty(); toast(`${nb} › ${sec}(으)로 옮겼어요`); });
     if (k === 'drive') window.open(memo.folderUrl, '_blank');
     if (k === 'del') deleteMemo(memo);
