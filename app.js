@@ -1,7 +1,7 @@
 /* 필기노트 — 휴대폰 필기 + Claude 처리 웹앱 */
 'use strict';
 
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 const PAGE_W = 800;          // 논리 좌표 폭
 const LINE = 56;             // 줄 간격
 const MARGIN = 40;           // 좌우 여백
@@ -969,12 +969,14 @@ $('#sheet').addEventListener('click', (e) => {
 $('#btnMore').addEventListener('click', () => {
   const drive = memo.folderUrl ? `<button class="opt" data-k="drive"><span class="em">📁</span><span>드라이브에서 보기</span></button>` : '';
   openSheet(`<h3>${esc(memo.title || '제목 없음')}</h3>
+    <button class="opt" data-k="img"><span class="em">🖼️</span><span>이미지로 공유<small>쓴 그대로 JPG로 · 길면 여러 장</small></span></button>
     <button class="opt" data-k="new"><span class="em">📝</span><span>새 메모</span></button>
     <button class="opt" data-k="tpl"><span class="em">📋</span><span>양식 넣기<small>학부모 상담 · 회의 · 업무 협조</small></span></button>
     <button class="opt" data-k="bg"><span class="em">▦</span><span>배경 바꾸기<small>지금: ${{ lines: '줄 노트', grid: '모눈', none: '무지' }[memo.bg || 'lines']}</small></span></button>
     <button class="opt" data-k="move"><span class="em">📂</span><span>위치 옮기기<small>${esc(memo.notebook)} › ${esc(memo.section)}</small></span></button>
     ${drive}
     <button class="opt danger" data-k="del"><span class="em">🗑️</span><span>메모 삭제</span></button>`, async (k) => {
+    if (k === 'img') { shareMemoImages(); return; }
     if (k === 'new') { await leaveMemo(); chooseTemplateAndCreate(memo.notebook, memo.section); }
     if (k === 'tpl') chooseTemplate(insertTemplate);
     if (k === 'bg') openSheet(`<h3>배경</h3>
@@ -1020,19 +1022,49 @@ function wrapLines(c, text, maxW) {
   });
   return out;
 }
-async function renderSlices(m) {
-  const k = SLICE_PX_W / PAGE_W;
+/* 자를 위치 찾기: 목표 높이 근처에서 글씨를 가장 적게 가로지르는 줄 */
+function findCut(m, target, minY) {
+  const crosses = (y) => {
+    let n = 0;
+    for (const s of m.strokes) if (s.b[1] < y && s.b[3] > y) n++;
+    for (const b of m.blocks) if (b.y < y && b.y + b.h > y) n += (b.type === 'photo' ? 1000 : 3);
+    return n;
+  };
+  let best = target, bestN = crosses(target);
+  for (let y = target; y > Math.max(minY + LINE * 4, target - LINE * 4) && bestN > 0; y -= 4) {
+    const n = crosses(y);
+    if (n < bestN) { best = y; bestN = n; }
+  }
+  return best;
+}
+/* 메모를 이미지 여러 장으로: Claude·드라이브(PNG, 겹침)용과 공유(JPG, 자연스러운 위치에서 자름)용 */
+async function renderMemoImages(m, o = {}) {
+  const pxW = o.pxW || SLICE_PX_W, sliceH = o.sliceH || SLICE_H;
+  const overlap = o.overlap == null ? LINE : o.overlap;
+  const k = pxW / PAGE_W;
   const total = contentBottom(m) + LINE * 0.5;
-  const out = [];
-  if (total <= LINE * 0.5) return out;
+  if (total <= LINE * 0.5) return [];
   const photos = {};
   for (const b of m.blocks) if (b.type === 'photo') photos[b.pid] = await getImg(b.pid);
-  for (let y0 = 0; y0 < total; y0 += SLICE_H - LINE) {
-    const y1 = Math.min(total, y0 + SLICE_H);
+
+  // 1) 자를 구간 정하기
+  const ranges = [];
+  let y0 = 0;
+  while (y0 < total) {
+    let y1 = Math.min(total, y0 + sliceH);
+    if (o.smart && total - y1 < sliceH * 0.3) y1 = total;          // 짧은 꼬리는 앞 장에 붙임
+    if (o.smart && y1 < total) y1 = findCut(m, y1, y0);
     const has = m.strokes.some(s => s.b[3] >= y0 && s.b[1] <= y1) || m.blocks.some(b => b.y + b.h >= y0 && b.y <= y1);
-    if (!has) { if (y1 >= total) break; continue; }
+    if (has) ranges.push([y0, y1]);
+    if (y1 >= total) break;
+    y0 = y1 - overlap;
+  }
+
+  // 2) 그리기
+  const out = [];
+  ranges.forEach(([y0, y1], idx) => {
     const c = document.createElement('canvas');
-    c.width = SLICE_PX_W; c.height = Math.ceil((y1 - y0) * k);
+    c.width = pxW; c.height = Math.ceil((y1 - y0) * k);
     const x = c.getContext('2d');
     x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
     x.setTransform(k, 0, 0, k, 0, -y0 * k);
@@ -1040,6 +1072,7 @@ async function renderSlices(m) {
       x.strokeStyle = '#e3e9f0'; x.lineWidth = 1;
       const step = m.bg === 'grid' ? LINE / 2 : LINE;
       for (let ly = Math.floor(y0 / step) * step + step; ly < y1; ly += step) { x.beginPath(); x.moveTo(0, ly - 0.5); x.lineTo(PAGE_W, ly - 0.5); x.stroke(); }
+      if (m.bg === 'grid') for (let lx = step; lx < PAGE_W; lx += step) { x.beginPath(); x.moveTo(lx - 0.5, y0); x.lineTo(lx - 0.5, y1); x.stroke(); }
     }
     for (const b of m.blocks) {
       if (b.y > y1 || b.y + b.h < y0) continue;
@@ -1057,11 +1090,66 @@ async function renderSlices(m) {
       }
     }
     drawStrokes(x, m.strokes, y0, y1);
-    out.push(c.toDataURL('image/png'));
-    if (y1 >= total) break;
-  }
+    if (o.pageNo && ranges.length > 1) {
+      x.setTransform(1, 0, 0, 1, 0, 0);
+      const label = `${idx + 1} / ${ranges.length}`;
+      x.font = `600 ${Math.round(26 * k)}px sans-serif`;
+      const tw = x.measureText(label).width, pad = 10 * k;
+      x.fillStyle = 'rgba(30, 58, 95, .78)';
+      const bx = c.width - tw - pad * 3, by = c.height - 44 * k;
+      x.beginPath(); x.roundRect ? x.roundRect(bx, by, tw + pad * 2, 34 * k, 17 * k) : x.rect(bx, by, tw + pad * 2, 34 * k); x.fill();
+      x.fillStyle = '#fff'; x.textBaseline = 'middle';
+      x.fillText(label, bx + pad, by + 17 * k);
+    }
+    out.push(o.mime === 'image/jpeg' ? c.toDataURL('image/jpeg', o.q || 0.9) : c.toDataURL('image/png'));
+  });
   return out;
 }
+function renderSlices(m) { return renderMemoImages(m); }
+
+/* ───────── 메모를 이미지로 공유 (폰 안에서 만들어 바로 공유 — 서버를 거치지 않음) ───────── */
+function dataUrlToFile(d, name) {
+  const [head, b64] = d.split(',');
+  const mime = head.match(/data:([^;]+)/)[1];
+  const bin = atob(b64), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return new File([u8], name, { type: mime });
+}
+async function shareMemoImages() {
+  if (!memo) return;
+  if (document.activeElement && page.contains(document.activeElement)) document.activeElement.blur();
+  const imgs = await renderMemoImages(memo, { pxW: 1080, sliceH: SLICE_H, overlap: 0, smart: true, mime: 'image/jpeg', q: 0.9, pageNo: true });
+  if (!imgs.length) { toast('메모에 내용을 먼저 써주세요'); return; }
+  const base = safeFileName(memo.title || '메모 ' + fmtDate(memo.updated).replace('/', '-'));
+  const files = imgs.map((d, i) => dataUrlToFile(d, imgs.length > 1 ? `${base} (${i + 1}).jpg` : `${base}.jpg`));
+  await shareFiles(files, memo.title || '메모');
+}
+function safeFileName(s) { return String(s).replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) || '메모'; }
+async function shareFiles(files, title) {
+  const canFiles = navigator.canShare && navigator.canShare({ files });
+  if (canFiles) {
+    try { await navigator.share({ files, title }); return; }
+    catch (e) {
+      if (e.name === 'AbortError') return;
+      // 이미지 만드는 동안 '누름' 효과가 끝나 공유가 막힌 경우 → 한 번 더 누르게 함
+      openSheet(`<h3>이미지 ${files.length}장 준비됐어요</h3>
+        <button class="opt" data-k="go"><span class="em">📤</span><span>공유하기</span></button>`, async () => {
+        try { await navigator.share({ files, title }); } catch (err) { if (err.name !== 'AbortError') downloadFiles(files); }
+      });
+      return;
+    }
+  }
+  downloadFiles(files);
+}
+function downloadFiles(files) {
+  files.forEach((f, i) => setTimeout(() => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(f); a.download = f.name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }, i * 350));
+  toast(`이 기기에서는 공유 대신 사진 ${files.length}장을 저장했어요`);
+}
+
 async function buildPayload(m, forClaude) {
   const pages = await renderSlices(m);
   const photos = [], claudePhotos = [], uploadedNow = [];
@@ -1249,7 +1337,7 @@ function renderResults() {
       } else if (m.status === 'done') {
         html += `<div class="rsec"><div class="corr">등록할 일정이나 할 일은 없었어요.</div></div>`;
       }
-      if (m.transcript) html += `<div class="share-row"><button class="btn grow primary" style="width:100%" data-r="share"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg>공유 (읽은 내용 보내기)</button></div>`;
+      html += `<div class="share-row btns"><button class="btn grow primary" data-r="shareImg">🖼️ 이미지로 공유</button>${m.transcript ? `<button class="btn grow" data-r="share">📝 글자로 공유</button>` : ''}</div>`;
     }
     html += `</div>`;
   } else if (!isEmpty(m)) {
@@ -1349,6 +1437,7 @@ $('#results').addEventListener('click', async (e) => {
     case 'cancelTr': memo.editingTr = false; renderResults(); break;
     case 'saveTr': memo.transcript = $('#trEdit').value; memo.editingTr = false; markDirty(); renderResults(); toast('수정했어요'); break;
     case 'share': shareText(memo.title || '메모', memo.transcript); break;
+    case 'shareImg': shareMemoImages(); break;
     case 'copy': copyText(it.text); break;
     case 'shareAns': shareText(it.title || '결과', it.text); break;
     case 'open': if (it.link || it.url) window.open(it.link || it.url, '_blank'); break;

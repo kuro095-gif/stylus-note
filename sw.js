@@ -1,5 +1,5 @@
 /* 필기노트 오프라인 캐시 — 앱을 고치면 VERSION 숫자만 올려주세요 */
-const VERSION = 'v1.0.1';
+const VERSION = 'v1.0.2';
 const CACHE = 'stylusnote-' + VERSION;
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
