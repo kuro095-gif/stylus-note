@@ -20,9 +20,13 @@
     <header class="topbar">
       <button class="icon-btn" id="btnList" aria-label="메모 목록">
         <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <span id="pinBadge" class="pin-badge hidden"></span>
       </button>
       <input id="title" class="title-input" placeholder="제목 없음" autocomplete="off" enterkeyhint="done">
       <span id="syncDot" class="sync-dot" title="저장됨"></span>
+      <button class="icon-btn pin-btn" id="btnPin" aria-label="확인할 메모로 고정">
+        <svg viewBox="0 0 24 24"><path d="M9 3h6l-1 6 4 4H6l4-4z"/><path d="M12 13v8"/></svg>
+      </button>
       <button class="icon-btn" id="btnMore" aria-label="메뉴">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
       </button>
@@ -59,6 +63,10 @@
       </button>
     </nav>
 
+    <div id="pinBar" class="pin-bar hidden">
+      <span>📌 확인 대기 중 · 상태표시줄에 알림 있음</span>
+      <button id="btnPinDone">✅ 확인</button>
+    </div>
     <div id="palette" class="palette hidden"></div>
 
     <div id="scroller">

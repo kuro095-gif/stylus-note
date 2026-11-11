@@ -324,3 +324,24 @@ body.textmode .blk.focused .del { display: block; }
 
 .banner { margin: 10px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); color: #78350f; font-size: 13.5px; line-height: 1.5; }
 .banner button { color: var(--navy-2); font-weight: 700; text-decoration: underline; }
+
+/* 📌 확인할 메모 */
+.icon-btn { position: relative; }
+.pin-btn { color: rgba(255,255,255,.7); }
+.pin-btn.on { color: #fbbf24; }
+.pin-btn.on svg { fill: #fbbf24; }
+.pin-badge {
+  position: absolute; top: 4px; right: 2px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 99px; background: #ef4444; color: #fff; font-size: 11px; font-weight: 700;
+  display: grid; place-items: center; line-height: 1;
+}
+.pin-bar {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px 7px 12px; flex: none;
+  background: #fff7ed; border-bottom: 1px solid #fed7aa; color: #9a3412; font-size: 13px;
+}
+.pin-bar span { flex: 1; min-width: 0; }
+.pin-bar button { flex: none; height: 32px; padding: 0 12px; border-radius: 9px; background: #ea580c; color: #fff; font-weight: 700; font-size: 13px; }
+.chip.pinchip { border-color: #fdba74; color: #c2410c; }
+.chip.pinchip.on { background: #ea580c; border-color: #ea580c; color: #fff; }
+.mcard.pinned { box-shadow: inset 4px 0 0 #ea580c, var(--shadow); }
+.mcard .pin-tag { color: #c2410c; font-weight: 700; }

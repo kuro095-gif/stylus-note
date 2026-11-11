@@ -1,7 +1,7 @@
 /* 필기노트 — 휴대폰 필기 + Claude 처리 웹앱 */
 'use strict';
 
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.1.0';
 const PAGE_W = 800;          // 논리 좌표 폭
 const LINE = 56;             // 줄 간격
 const MARGIN = 40;           // 좌우 여백
@@ -51,12 +51,10 @@ const DB = (() => {
   let dbp;
   function open() {
     if (!dbp) dbp = new Promise((res, rej) => {
-      const r = indexedDB.open('stylusnote', 1);
+      const r = indexedDB.open('stylusnote', 2);
       r.onupgradeneeded = () => {
         const d = r.result;
-        d.createObjectStore('memos', { keyPath: 'id' });
-        d.createObjectStore('outbox', { keyPath: 'id' });
-        d.createObjectStore('photos', { keyPath: 'id' });
+        ['memos', 'outbox', 'photos', 'meta'].forEach(n => { if (!d.objectStoreNames.contains(n)) d.createObjectStore(n, { keyPath: 'id' }); });
       };
       r.onsuccess = () => res(r.result);
       r.onerror = () => rej(r.error);
@@ -83,7 +81,10 @@ const DB = (() => {
 
 /* ───────── 설정 ───────── */
 const settings = Object.assign({ url: '', pw: '', input: 'auto', bg: 'lines' }, JSON.parse(localStorage.getItem('sn.settings') || '{}'));
-function saveSettings() { localStorage.setItem('sn.settings', JSON.stringify(settings)); }
+function saveSettings() {
+  localStorage.setItem('sn.settings', JSON.stringify(settings));
+  DB.put('meta', { id: 'conn', url: settings.url, pw: settings.pw }).catch(() => {});   // 알림의 ✅ 확인이 서버에 바로 알릴 수 있게
+}
 let notebooks = JSON.parse(localStorage.getItem('sn.notebooks') || 'null') || DEFAULT_NOTEBOOKS;
 function saveNotebooks() { localStorage.setItem('sn.notebooks', JSON.stringify(notebooks)); }
 let penSeen = localStorage.getItem('sn.penSeen') === '1';
@@ -908,6 +909,7 @@ async function openMemo(m) {
   layout();
   renderResults();
   renderToolbar();
+  renderPin();
   setDot(statusDot(m));
 }
 async function leaveMemo() {
@@ -916,9 +918,11 @@ async function leaveMemo() {
   clearTimeout(saveTimer); clearTimeout(syncTimer);
   if (isEmpty(m)) {
     if (m.saved) { await DB.del('memos', m.id); }
+    closePinNotice(m.id);
     return;
   }
   await saveMemo(m);
+  if (m.pinned) showPinNotice(m, true);          // 제목·내용이 바뀌었을 수 있으니 조용히 갱신
   if (m.updated > (m.syncedAt || 0)) enqueue(m.id, 'sync');
 }
 function createAndOpen(nb, sec, tplKey) {
@@ -1004,10 +1008,97 @@ async function deleteMemo(m) {
   const q = await DB.all('outbox');
   for (const j of q) if (j.memoId === m.id) await DB.del('outbox', j.id);
   for (const b of m.blocks) if (b.type === 'photo') await DB.del('photos', b.pid);
+  closePinNotice(m.id);
+  if (m.pinned) pinToServer(m.id, false);
   memo = null;
   createAndOpen();
   toast('메모를 지웠어요');
 }
+
+/* ───────── 📌 확인할 메모 (상태표시줄 고정 알림) ───────── */
+function noticeBody(m) {
+  const t = (m.transcript || typedTexts(m).join(' ') || '').replace(/\s+/g, ' ').trim();
+  return (t ? t.slice(0, 90) : (m.strokes.length ? '손글씨 메모' : '')) + `\n${m.notebook} › ${m.section} · ${fmtDate(m.updated)}`;
+}
+async function swReg() {
+  if (!('serviceWorker' in navigator)) return null;
+  try { return await navigator.serviceWorker.ready; } catch (e) { return null; }
+}
+async function showPinNotice(m, quiet) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const reg = await swReg(); if (!reg) return;
+  try {
+    await reg.showNotification('📌 ' + (m.title || '제목 없는 메모'), {
+      body: noticeBody(m),
+      tag: 'pin-' + m.id,
+      icon: 'icon-192.png',
+      badge: 'badge-96.png',
+      requireInteraction: true,
+      silent: !!quiet,
+      renotify: !quiet,
+      data: { id: m.id, title: m.title || '제목 없는 메모' },
+      actions: [{ action: 'ok', title: '✅ 확인' }, { action: 'open', title: '열기' }]
+    });
+  } catch (e) { /* 알림을 띄우지 못해도 앱은 그대로 */ }
+}
+async function closePinNotice(id) {
+  const reg = await swReg(); if (!reg || !reg.getNotifications) return;
+  try { (await reg.getNotifications({ tag: 'pin-' + id })).forEach(n => n.close()); } catch (e) { /* 무시 */ }
+}
+async function pinToServer(id, pinned) {
+  if (!settings.url || !settings.pw || !navigator.onLine) return;
+  try { await api({ action: 'pin', id, pinned }, 30000); } catch (e) { /* 다음 저장 때 반영됨 */ }
+}
+async function setPinned(m, on) {
+  if (on && 'Notification' in window && Notification.permission === 'default') {
+    try { await Notification.requestPermission(); } catch (e) { /* 무시 */ }
+  }
+  m.pinned = on; m.pinAt = Date.now();
+  if (m === memo) { markDirty(); renderPin(); }
+  await saveMemo(m);
+  if (on) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      toast('알림이 꺼져 있어요. 폰 설정 → 애플리케이션 → 필기노트 → 알림을 허용해주세요. (목록·하루 정리 알림에는 표시돼요)', 6000);
+    } else {
+      showPinNotice(m, false);
+      toast('📌 고정했어요. ✅ 확인을 누를 때까지 알림이 남아 있어요');
+    }
+  } else {
+    closePinNotice(m.id);
+    toast('✅ 확인했어요');
+  }
+  if (!isEmpty(m)) enqueue(m.id, 'sync');
+  updatePinBadge();
+}
+function renderPin() {
+  const on = !!(memo && memo.pinned);
+  $('#btnPin').classList.toggle('on', on);
+  $('#btnPin').setAttribute('aria-label', on ? '확인 완료로 바꾸기' : '확인할 메모로 고정');
+  $('#pinBar').classList.toggle('hidden', !on);
+  updatePinBadge();
+}
+async function updatePinBadge() {
+  const list = await DB.all('memos').catch(() => []);
+  const n = list.filter(m => m.pinned && (!memo || m.id !== memo.id)).length + (memo && memo.pinned ? 1 : 0);
+  const b = $('#pinBadge');
+  b.textContent = n; b.classList.toggle('hidden', !n);
+}
+async function restorePinNotices() {
+  if (!('Notification' in window) || Notification.permission !== 'granted') { updatePinBadge(); return; }
+  const reg = await swReg(); if (!reg) return;
+  const shown = new Set(((reg.getNotifications ? await reg.getNotifications().catch(() => []) : [])).map(n => n.tag));
+  const list = await DB.all('memos').catch(() => []);
+  for (const m of list) if (m.pinned && !shown.has('pin-' + m.id)) showPinNotice(m, true);   // 재부팅 등으로 사라졌으면 다시
+  updatePinBadge();
+}
+async function refreshPinFromDB() {
+  if (!memo) return;
+  const d = await DB.get('memos', memo.id).catch(() => null);
+  if (d && !d.pinned && memo.pinned && (d.pinAt || 0) >= (memo.pinAt || 0)) { memo.pinned = false; memo.pinAt = d.pinAt; renderPin(); }
+  updatePinBadge();
+}
+$('#btnPin').addEventListener('click', () => { if (memo) setPinned(memo, !memo.pinned); });
+$('#btnPinDone').addEventListener('click', () => { if (memo) setPinned(memo, false); });
 
 /* ───────── 메모 → 이미지 (Claude·드라이브용) ───────── */
 function wrapLines(c, text, maxW) {
@@ -1169,7 +1260,7 @@ async function buildPayload(m, forClaude) {
   const payload = {
     memo: {
       id: m.id, title: m.title, notebook: m.notebook, section: m.section, created: m.created, updated: m.updated,
-      transcript: m.transcript || '', typed: typedTexts(m),
+      transcript: m.transcript || '', typed: typedTexts(m), pinned: !!m.pinned,
       photoIds: m.blocks.filter(b => b.type === 'photo').map(b => b.pid),
       resultSummary: (m.handled || []).join('\n'),
       doc
@@ -1492,7 +1583,7 @@ async function copyText(text) {
 }
 
 /* ───────── 목록 화면 ───────── */
-const listState = { nb: null, sec: null, q: '' };
+const listState = { nb: null, sec: null, q: '', pin: false };
 async function allMemos() {
   const list = await DB.all('memos');
   if (memo && !list.some(m => m.id === memo.id) && !isEmpty(memo)) list.push(memo);
@@ -1512,7 +1603,9 @@ function memoStatusHtml(m) {
 async function renderList() {
   const list = await allMemos();
   // 필기장 칩
-  $('#nbChips').innerHTML = `<button class="chip ${!listState.nb ? 'on' : ''}" data-nb="">전체</button>` +
+  const pinCount = list.filter(m => m.pinned).length;
+  $('#nbChips').innerHTML = (pinCount ? `<button class="chip pinchip ${listState.pin ? 'on' : ''}" data-pin="1">📌 확인 대기 ${pinCount}</button>` : '') +
+    `<button class="chip ${!listState.nb && !listState.pin ? 'on' : ''}" data-nb="">전체</button>` +
     notebooks.map(n => `<button class="chip ${listState.nb === n.name ? 'on' : ''}" data-nb="${esc(n.name)}">${esc(n.name)}</button>`).join('') +
     `<button class="chip add" data-add="nb">＋ 필기장</button>`;
   const nb = notebooks.find(n => n.name === listState.nb);
@@ -1525,21 +1618,24 @@ async function renderList() {
       const hay = [m.title, m.transcript, typedTexts(m).join(' '), m.notebook, m.section].join(' ').toLowerCase();
       return hay.includes(q);
     }
+    if (listState.pin) return !!m.pinned;
     if (listState.nb && m.notebook !== listState.nb) return false;
     if (listState.sec && m.section !== listState.sec) return false;
     return true;
   });
   $('#memoList').innerHTML = shown.length ? shown.map(m => {
     const preview = (m.transcript || typedTexts(m).join(' ') || '').replace(/\s+/g, ' ').slice(0, 80);
-    return `<button class="mcard" data-id="${esc(m.id)}">
+    return `<button class="mcard ${m.pinned ? 'pinned' : ''}" data-id="${esc(m.id)}">
       <div class="t"><span>${esc(m.title || '제목 없음')}</span><span class="d">${fmtDate(m.updated)}</span></div>
       <div class="p">${esc(preview || (m.strokes.length ? '손글씨 메모' : ''))}${q || !listState.nb ? ` · ${esc(m.notebook)} › ${esc(m.section)}` : ''}</div>
-      <div class="s">${memoStatusHtml(m)}</div></button>`;
+      <div class="s">${m.pinned ? '<span class="pin-tag">📌 확인 대기</span>' : ''}${memoStatusHtml(m)}</div></button>`;
   }).join('') : `<div class="list-empty">${q ? '검색 결과가 없어요' : '아직 메모가 없어요'}</div>`;
 }
 $('#search').addEventListener('input', (e) => { listState.q = e.target.value; renderList(); });
 $('#nbChips').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.pin) { listState.pin = !listState.pin; listState.nb = null; listState.sec = null; renderList(); return; }
+  listState.pin = false;
   if (b.dataset.add) {
     const name = (prompt('새 필기장 이름') || '').trim();
     if (name && !notebooks.some(n => n.name === name)) { notebooks.push({ name, sections: ['일반'] }); saveNotebooks(); listState.nb = name; listState.sec = null; }
@@ -1667,15 +1763,34 @@ window.addEventListener('resize', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     if (memo && !isEmpty(memo)) { clearTimeout(saveTimer); saveMemo(memo).then(() => { if (memo.updated > (memo.syncedAt || 0)) enqueue(memo.id, 'sync'); }); }
-  } else flush();
+  } else { flush(); refreshPinFromDB(); }
 });
 
 history.replaceState({ v: 'memo' }, '');
 memo = null;
-createAndOpen();
+(async () => {
+  const want = new URLSearchParams(location.search).get('memo');
+  const m = want && await DB.get('memos', want).catch(() => null);
+  if (want) history.replaceState({ v: 'memo' }, '', location.pathname);
+  if (m) openMemo(m); else createAndOpen();
+  saveSettings();
+  restorePinNotices();
+})();
 renderToolbar();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  // 알림에서 ✅ 확인/열기를 눌렀을 때
+  navigator.serviceWorker.addEventListener('message', async (e) => {
+    const d = e.data || {};
+    if (d.type === 'unpinned') {
+      if (memo && memo.id === d.id) { memo.pinned = false; memo.pinAt = d.at; renderPin(); }
+      updatePinBadge();
+    }
+    if (d.type === 'open') {
+      const m = (memo && memo.id === d.id) ? memo : await DB.get('memos', d.id);
+      if (m) { showView('memoView'); openMemo(m); }
+    }
+  });
 }
 setTimeout(flush, 1500);
